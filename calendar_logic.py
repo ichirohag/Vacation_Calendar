@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from calendar import monthcalendar
 from datetime import datetime, timedelta
-from utils import attach_tooltip
+from utils import attach_tooltip, center_window, validate_date, on_date_input
 from shared import update_employee_list
 from shared import cache_vacations
 
@@ -81,6 +81,7 @@ def update_calendar(app):
     app.root.config(cursor="watch")
     app.root.update_idletasks()
 
+    # Создаём фреймы месяцев, если их ещё нет (без изменений)
     if not app.month_frames:
         for w in app.calendar_frame.winfo_children():
             w.destroy()
@@ -107,26 +108,45 @@ def update_calendar(app):
                 ttk.Label(m_frame, text=d).grid(row=1, column=c, sticky="nsew")
             app.month_frames.append(m_frame)
 
+    # Обновляем дни с использованием кэша
     for i, m_frame in enumerate(app.month_frames):
         month_num = i + 1
         calendar_days = monthcalendar(app.current_year, month_num)
-        for r in range(2, m_frame.grid_size()[1]):
-            for w in m_frame.grid_slaves(row=r):
-                w.destroy()
+        # Очищаем только те дни, которые больше не нужны (опционально, можно пропустить для простоты)
+        # Вместо этого полагаемся на точное позиционирование ниже
+
         for w_idx, week in enumerate(calendar_days):
             for d_idx, day in enumerate(week):
                 r = w_idx + 2
                 if day != 0:
                     date = datetime(app.current_year, month_num, day)
                     date_key = date.strftime("%Y-%m-%d")
+                    
+                    # Проверяем, есть ли виджет в кэше
+                    if date_key in app.day_widgets:
+                        day_frame, lbl = app.day_widgets[date_key]
+                    else:
+                        # Создаём новый виджет, если его нет
+                        day_frame = tk.Frame(m_frame, borderwidth=1, relief="flat", padx=2, pady=2)
+                        day_frame.grid(row=r, column=d_idx, sticky="nsew", padx=1, pady=1)
+                        lbl = tk.Label(day_frame, text=str(day), width=4, anchor="center")
+                        lbl.pack(fill="both", expand=True)
+                        app.day_widgets[date_key] = (day_frame, lbl)
+
+                    # Обновляем стиль и содержимое
                     vacation_employees = app.vacation_cache.get(date_key, [])
                     has_vacation = len(vacation_employees) > 0
                     vacation_overlap = len(vacation_employees) > 1
                     bg_color = "#FFCC99" if vacation_overlap else "#CCFFCC" if has_vacation else "#FFFFFF"
-                    day_frame = tk.Frame(m_frame, bg=bg_color, borderwidth=1, relief="flat", padx=2, pady=2)
-                    day_frame.grid(row=r, column=d_idx, sticky="nsew", padx=1, pady=1)
-                    lbl = tk.Label(day_frame, text=str(day), width=4, anchor="center", bg=bg_color)
-                    lbl.pack(fill="both", expand=True)
+                    day_frame.config(bg=bg_color)
+                    lbl.config(bg=bg_color, text=str(day))
+
+                    # Очистка старых холстов (для сегодняшней даты)
+                    for widget in day_frame.winfo_children():
+                        if isinstance(widget, tk.Canvas):
+                            widget.destroy()
+
+                    # Применяем стили
                     is_today = date.date() == app.today
                     if is_today:
                         lbl.config(foreground="#3366CC")
@@ -136,13 +156,23 @@ def update_calendar(app):
                         lbl.lift()
                     elif is_holiday(app, date):
                         lbl.config(foreground="red")
+                    elif is_workday(app, date):
+                        lbl.config(foreground="black")
                     elif is_weekend(app, date):
                         lbl.config(foreground="gray")
-                    else:
-                        lbl.config(foreground="black")
+
+                    # Обновляем всплывающую подсказку
                     if has_vacation:
                         tooltip_text = "Отпуск:\n" + "\n".join(f"{name} ({get_employee_position(app, name)})" for name in vacation_employees)
                         attach_tooltip(day_frame, tooltip_text)
+                    else:
+                        # Удаляем старую подсказку, если она была
+                        for binding in day_frame.bind():
+                            if "<Enter>" in binding:
+                                day_frame.unbind("<Enter>")
+                                day_frame.unbind("<Leave>")
+
+                    # Обновляем контекстное меню
                     d_menu = tk.Menu(app.root, tearoff=0)
                     d_menu.add_command(label="Сделать праздничным", command=lambda d=date: make_holiday(app, d))
                     d_menu.add_command(label="Сделать рабочим", command=lambda d=date: make_workday(app, d))
@@ -172,63 +202,6 @@ def get_employee_position(app, fio):
         if emp["fio"] == fio:
             return emp["position"]
     return ""
-
-def add_holiday_dialog(app):
-    dialog = tk.Toplevel(app.root)
-    dialog.title("Добавить праздник")
-    dialog.geometry("300x150")
-    dialog.resizable(True, True)
-    dialog.grid_columnconfigure(0, weight=1)
-    dialog.grid_columnconfigure(1, weight=1)
-
-    ttk.Label(dialog, text="Дата праздника (ДД.ММ.ГГГГ):").grid(row=0, column=0, padx=5, pady=5, sticky="e")
-    date_entry = ttk.Entry(dialog)
-    date_entry.grid(row=0, column=1, padx=5, pady=5, sticky="we")
-
-    def save_holiday():
-        try:
-            date_str = date_entry.get().strip()
-            holiday_date = datetime.strptime(date_str, "%d.%m.%Y")
-            app.holidays.add(holiday_date)
-            app.data_modified = True
-            recalc_employee_vacations(app)
-            update_calendar(app)
-            dialog.destroy()
-            messagebox.showinfo("Информация", f"Праздник {date_str} добавлен")
-        except ValueError:
-            messagebox.showerror("Ошибка", "Неверный формат даты! Используйте ДД.ММ.ГГГГ")
-
-    ttk.Button(dialog, text="Сохранить", command=save_holiday).grid(row=1, column=0, columnspan=2, pady=10, sticky="we")
-
-def add_workday_dialog(app):
-    dialog = tk.Toplevel(app.root)
-    dialog.title("Добавить рабочий выходной")
-    dialog.geometry("300x150")
-    dialog.resizable(True, True)
-    dialog.grid_columnconfigure(0, weight=1)
-    dialog.grid_columnconfigure(1, weight=1)
-
-    ttk.Label(dialog, text="Дата рабочего дня (ДД.ММ.ГГГГ):").grid(row=0, column=0, padx=5, pady=5, sticky="e")
-    date_entry = ttk.Entry(dialog)
-    date_entry.grid(row=0, column=1, padx=5, pady=5, sticky="we")
-
-    def save_workday():
-        try:
-            date_str = date_entry.get().strip()
-            workday_date = datetime.strptime(date_str, "%d.%m.%Y")
-            if workday_date.weekday() < 5 and workday_date not in app.weekends:
-                messagebox.showwarning("Предупреждение", "Выбранный день не является выходным")
-                return
-            app.workdays.add(workday_date)
-            app.data_modified = True
-            recalc_employee_vacations(app)
-            update_calendar(app)
-            dialog.destroy()
-            messagebox.showinfo("Информация", f"Рабочий выходной {date_str} добавлен")
-        except ValueError:
-            messagebox.showerror("Ошибка", "Неверный формат даты! Используйте ДД.ММ.ГГГГ")
-
-    ttk.Button(dialog, text="Сохранить", command=save_workday).grid(row=1, column=0, columnspan=2, pady=10, sticky="we")
 
 def export_to_csv(app):
     try:
@@ -356,7 +329,7 @@ def export_to_csv(app):
         messagebox.showerror("Ошибка", f"Ошибка при экспорте в HTML: {str(e)}")
 
 def show_about(app):
-    from .constants import VERSION
+    from constants import VERSION
     about_dialog = tk.Toplevel(app.root)
     about_dialog.title("О программе")
     about_dialog.geometry("400x300")

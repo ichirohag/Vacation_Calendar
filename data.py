@@ -26,18 +26,3 @@ def load_data(app):
         messagebox.showerror("Ошибка", "Ошибка формата даты в данных")
     except Exception as e:
         messagebox.showerror("Ошибка", f"Неизвестная ошибка при загрузке данных: {str(e)}")
-
-def save_data(app):
-    try:
-        data = {
-            "employees": app.employees,
-            "holidays": [d.strftime("%d.%m.%Y") for d in app.holidays],
-            "workdays": [d.strftime("%d.%m.%Y") for d in app.workdays],
-            "weekends": [d.strftime("%d.%m.%Y") for d in app.weekends]
-        }
-        with open(DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-        app.data_modified = False
-        messagebox.showinfo("Информация", "Данные успешно сохранены")
-    except Exception as e:
-        messagebox.showerror("Ошибка", f"Ошибка при сохранении данных: {str(e)}")

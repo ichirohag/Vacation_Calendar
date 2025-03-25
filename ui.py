@@ -4,6 +4,7 @@ from tkinter import ttk
 from employee_logic import (add_employee_dialog, add_vacation_to_selected, edit_employee_dialog, delete_employee, edit_vacation_dialog, delete_vacation, show_employee_menu)
 from calendar_logic import show_about, export_to_csv
 from calendar_logic import apply_changes
+from utils import center_window
 
 def setup_top_panel(app):
     app.top_panel = ttk.Frame(app.main_frame)

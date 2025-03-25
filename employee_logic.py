@@ -1,23 +1,83 @@
-# employee_logic.py
+#employee_logic.py
 import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime
 from tkcalendar import Calendar
-from calendar_logic import recalc_employee_vacations
-from calendar_logic import update_calendar
-from shared import cache_vacations
-from shared import update_employee_list
+from calendar_logic import recalc_employee_vacations, update_calendar
+from shared import cache_vacations, update_employee_list
+from utils import center_window, validate_date, on_date_input, show_calendar
+
+def create_date_entry(dialog, row, label_text, show_calendar_cmd):
+    """Создает поле ввода даты с валидацией, подсказкой и кнопкой календаря"""
+    ttk.Label(dialog, text=label_text).grid(row=row, column=0, padx=5, pady=5, sticky="e")
+    entry = ttk.Entry(dialog, validate="key", validatecommand=(dialog.register(validate_date), "%S", "%P", "%d"))
+    entry.grid(row=row, column=1, padx=5, pady=5, sticky="we")
+    
+    # Устанавливаем подсказку
+    placeholder_text = "ДД.ММ.ГГГГ"
+    entry.config(validate="none")  # Отключаем валидацию для вставки
+    entry.insert(0, placeholder_text)
+    entry.config(validate="key")   # Включаем валидацию обратно
+    entry.config(foreground="grey")
+    
+    # Обработчик получения фокуса
+    def on_focus_in(event):
+        if entry.get() == placeholder_text:
+            entry.delete(0, tk.END)
+            entry.config(foreground="black")
+    
+    # Обработчик потери фокуса
+    def on_focus_out(event):
+        if not entry.get():
+            entry.insert(0, placeholder_text)
+            entry.config(foreground="grey")
+    
+    # Обработчик нажатия клавиши
+    def on_key_press(event):
+        if entry.get() != placeholder_text and entry.cget("foreground") != "black":
+            entry.config(foreground="black")
+    
+    entry.bind("<FocusIn>", on_focus_in)
+    entry.bind("<FocusOut>", on_focus_out)
+    entry.bind("<KeyPress>", on_key_press)
+    entry.bind("<KeyRelease>", on_date_input)
+    
+    ttk.Button(dialog, text="Выбрать", command=show_calendar_cmd).grid(row=row, column=2, padx=5)
+    return entry
 
 def add_employee_dialog(app):
     dialog = tk.Toplevel(app.root)
+    dialog.transient(app.root)
+    dialog.grab_set()
     dialog.title("Добавить сотрудника")
-    dialog.geometry("400x150")
+    dialog.geometry("300x150")
 
-    ttk.Label(dialog, text="ФИО:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
+    # Настройка веса строк и столбцов для центрирования
+    dialog.grid_rowconfigure(0, weight=1)  # Пустое пространство сверху
+    dialog.grid_rowconfigure(1, weight=0)  # ФИО
+    dialog.grid_rowconfigure(2, weight=0)  # Должность
+    dialog.grid_rowconfigure(3, weight=0)  # Кнопка
+    dialog.grid_rowconfigure(4, weight=1)  # Пустое пространство снизу
+    dialog.grid_columnconfigure(0, weight=1)  # Левый отступ
+    dialog.grid_columnconfigure(1, weight=1)  # Основной контент
+    dialog.grid_columnconfigure(2, weight=1)  # Правый отступ
+
+    # ФИО
+    ttk.Label(dialog, text="ФИО:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
     fio_entry = ttk.Entry(dialog)
-    fio_entry.grid(row=0, column=1, padx=5, pady=5, sticky="we")
+    fio_entry.grid(row=1, column=1, padx=5, pady=5, sticky="we")
     fio_error = ttk.Label(dialog, text="", foreground="red")
-    fio_error.grid(row=0, column=2, padx=5)
+    fio_error.grid(row=1, column=2, padx=5, sticky="w")
+
+    # Должность
+    ttk.Label(dialog, text="Должность:").grid(row=2, column=0, padx=5, pady=5, sticky="e")
+    pos_entry = ttk.Entry(dialog)
+    pos_entry.grid(row=2, column=1, padx=5, pady=5, sticky="we")
+
+    # Кнопка "Сохранить" в отдельном фрейме
+    btn_frame = ttk.Frame(dialog)
+    btn_frame.grid(row=3, column=0, columnspan=3, pady=10)  # columnspan=3 для центрирования
+    ttk.Button(btn_frame, text="Сохранить", command=lambda: save_emp(), width=10).pack()
 
     def validate_fio(*args):
         fio = fio_entry.get().strip()
@@ -31,10 +91,6 @@ def add_employee_dialog(app):
     fio_var = tk.StringVar()
     fio_entry.config(textvariable=fio_var)
     fio_var.trace("w", validate_fio)
-
-    ttk.Label(dialog, text="Должность:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
-    pos_entry = ttk.Entry(dialog)
-    pos_entry.grid(row=1, column=1, padx=5, pady=5, sticky="we")
 
     def save_emp():
         try:
@@ -54,7 +110,7 @@ def add_employee_dialog(app):
         except Exception as e:
             messagebox.showerror("Ошибка", f"Произошла ошибка: {str(e)}")
 
-    ttk.Button(dialog, text="Сохранить", command=save_emp).grid(row=2, column=0, columnspan=2, pady=10, sticky="we")
+    center_window(dialog, app.root)
 
 def add_vacation_to_selected(app):
     sel = app.employee_list.selection()
@@ -66,42 +122,44 @@ def add_vacation_to_selected(app):
 
 def add_vacation_dialog(app, employee_fio=None):
     dialog = tk.Toplevel(app.root)
+    dialog.transient(app.root)
+    dialog.grab_set()
     dialog.title("Добавить отпуск")
-    dialog.geometry("400x300")
+    dialog.geometry("320x150")
 
-    ttk.Label(dialog, text="Сотрудник:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
+    # Настраиваем вес строк и столбцов
+    dialog.grid_rowconfigure(0, weight=1)  # Пустое пространство сверху
+    dialog.grid_rowconfigure(1, weight=0)  # Сотрудник
+    dialog.grid_rowconfigure(2, weight=0)  # Отпуск с
+    dialog.grid_rowconfigure(3, weight=0)  # Отпуск по
+    dialog.grid_rowconfigure(4, weight=0)  # Кнопка
+    dialog.grid_rowconfigure(5, weight=1)  # Пустое пространство снизу
+    dialog.grid_columnconfigure(0, weight=1)  # Левый отступ
+    dialog.grid_columnconfigure(1, weight=1)  # Основной контент
+    dialog.grid_columnconfigure(2, weight=1)  # Правый отступ
+
+    # Сотрудник
+    ttk.Label(dialog, text="Сотрудник:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
     emp_combobox = ttk.Combobox(dialog, values=[emp["fio"] for emp in app.employees])
-    emp_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="we")
+    emp_combobox.grid(row=1, column=1, padx=5, pady=5, sticky="we")
     if employee_fio:
         emp_combobox.set(employee_fio)
         emp_combobox.config(state="readonly")
 
-    ttk.Label(dialog, text="Отпуск с:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
-    start_entry = ttk.Entry(dialog)
-    start_entry.grid(row=1, column=1, padx=5, pady=5, sticky="we")
-    ttk.Button(dialog, text="Выбрать", command=lambda: show_calendar(app, start_entry)).grid(row=1, column=2, padx=5)
+    # Поля ввода дат
+    start_entry = create_date_entry(dialog, 2, "Отпуск с:", lambda: show_calendar(app, start_entry))
+    end_entry = create_date_entry(dialog, 3, "Отпуск по:", lambda: show_calendar(app, end_entry))
 
-    ttk.Label(dialog, text="Отпуск по:").grid(row=2, column=0, padx=5, pady=5, sticky="e")
-    end_entry = ttk.Entry(dialog)
-    end_entry.grid(row=2, column=1, padx=5, pady=5, sticky="we")
-    ttk.Button(dialog, text="Выбрать", command=lambda: show_calendar(app, end_entry)).grid(row=2, column=2, padx=5)
+    # Кнопка "Сохранить"
+    btn_frame = ttk.Frame(dialog)
+    btn_frame.grid(row=3, column=0, columnspan=3, pady=10)
+    ttk.Button(btn_frame, text="Сохранить", command=save_vacation_wrapper, width=10).pack()
 
     def save_vacation_wrapper():
-        save_vacation(app, emp_combobox, start_entry, end_entry, dialog)
+        validate_and_save_vacation(app, emp_combobox.get().strip(), start_entry.get().strip(), end_entry.get().strip(), dialog)
 
-    ttk.Button(dialog, text="Сохранить", command=save_vacation_wrapper).grid(row=3, column=0, columnspan=3, pady=10, sticky="we")
-
-def show_calendar(app, entry):
-    top = tk.Toplevel(app.root)
-    cal = Calendar(top, selectmode="day", year=app.current_year, month=1, day=1, date_pattern="dd.mm.yyyy")
-    cal.pack(pady=10)
-
-    def set_date():
-        entry.delete(0, tk.END)
-        entry.insert(0, cal.get_date())
-        top.destroy()
-
-    ttk.Button(top, text="Выбрать", command=set_date).pack(pady=5)
+    center_window(dialog, app.root)
+    dialog.after(100, dialog.focus_set)
 
 def save_vacation(app, emp_combobox, start_entry, end_entry, dialog):
     try:
@@ -119,6 +177,9 @@ def save_vacation(app, emp_combobox, start_entry, end_entry, dialog):
                 return
         except ValueError:
             messagebox.showerror("Ошибка", "Неверный формат даты! Используйте ДД.ММ.ГГГГ")
+            start_entry.config(foreground="red")
+            end_entry.config(foreground="red")
+            dialog.after(2000, lambda: [start_entry.config(foreground="black"), end_entry.config(foreground="black")])
             return
 
         for emp in app.employees:
@@ -153,49 +214,91 @@ def edit_vacation_dialog(app):
             old_end = item["values"][2]
 
             dialog = tk.Toplevel(app.root)
+            dialog.transient(app.root)
+            dialog.grab_set()
             dialog.title("Редактировать отпуск")
-            dialog.geometry("400x150")
+            dialog.geometry("320x150")
 
-            ttk.Label(dialog, text="Отпуск с:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
-            start_entry = ttk.Entry(dialog)
+            # Настройка веса строк и столбцов
+            dialog.grid_rowconfigure(0, weight=1)  # Пустое пространство сверху
+            dialog.grid_rowconfigure(1, weight=0)  # Сотрудник
+            dialog.grid_rowconfigure(2, weight=0)  # Отпуск с
+            dialog.grid_rowconfigure(3, weight=0)  # Отпуск по
+            dialog.grid_rowconfigure(4, weight=0)  # Кнопка
+            dialog.grid_rowconfigure(5, weight=1)  # Пустое пространство снизу
+            dialog.grid_columnconfigure(0, weight=1)  # Левый отступ
+            dialog.grid_columnconfigure(1, weight=1)  # Основной контент
+            dialog.grid_columnconfigure(2, weight=1)  # Правый отступ
+
+            # Сотрудник
+            ttk.Label(dialog, text="Сотрудник:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
+            emp_combobox = ttk.Combobox(dialog, values=[emp["fio"] for emp in app.employees])
+            emp_combobox.set(fio)
+            emp_combobox.config(state="readonly")
+            emp_combobox.grid(row=1, column=1, padx=5, pady=5, sticky="we")
+
+            # Поля дат
+            start_entry = create_date_entry(dialog, 2, "Отпуск с:", lambda: show_calendar(app, start_entry))
+            start_entry.delete(0, tk.END)
             start_entry.insert(0, old_start)
-            start_entry.grid(row=0, column=1, padx=5, pady=5, sticky="we")
+            start_entry.config(foreground="black")
 
-            ttk.Label(dialog, text="Отпуск по:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
-            end_entry = ttk.Entry(dialog)
+            end_entry = create_date_entry(dialog, 3, "Отпуск по:", lambda: show_calendar(app, end_entry))
+            end_entry.delete(0, tk.END)
             end_entry.insert(0, old_end)
-            end_entry.grid(row=1, column=1, padx=5, pady=5, sticky="we")
+            end_entry.config(foreground="black")
+
+            # Кнопка "Сохранить" с фиксированной шириной
+            btn_frame = ttk.Frame(dialog)
+            btn_frame.grid(row=4, column=0, columnspan=3, pady=10)
+            ttk.Button(btn_frame, text="Сохранить", command=lambda: save_edit(), width=10).pack()
 
             def save_edit():
-                try:
-                    new_start = start_entry.get().strip()
-                    new_end = end_entry.get().strip()
-                    try:
-                        s_date = datetime.strptime(new_start, "%d.%m.%Y")
-                        e_date = datetime.strptime(new_end, "%d.%m.%Y")
-                        if s_date > e_date:
-                            messagebox.showerror("Ошибка", "Дата начала не может быть позже даты окончания")
-                            return
-                    except ValueError:
-                        messagebox.showerror("Ошибка", "Неверный формат даты! Используйте ДД.ММ.ГГГГ")
-                        return
-                    for emp in app.employees:
-                        if emp["fio"] == fio:
-                            for vac in emp["vacations"]:
-                                if vac["start_date"] == old_start and vac["end_date"] == old_end:
-                                    vac["start_date"] = new_start
-                                    vac["end_date"] = new_end
-                                    break
-                            break
-                    app.data_modified = True
-                    recalc_employee_vacations(app)
-                    update_employee_list(app)
-                    update_calendar(app)
-                    dialog.destroy()
-                except Exception as e:
-                    messagebox.showerror("Ошибка", f"Произошла ошибка: {str(e)}")
+                validate_and_save_vacation(app, emp_combobox.get().strip(), start_entry.get().strip(), end_entry.get().strip(), dialog, {"start_date": old_start, "end_date": old_end})
 
-            ttk.Button(dialog, text="Сохранить", command=save_edit).grid(row=2, column=0, columnspan=2, pady=10, sticky="we")
+            center_window(dialog, app.root)
+            dialog.after(100, dialog.focus_set)
+
+def save_vacation(app, emp_combobox, start_entry, end_entry, dialog):
+    try:
+        fio = emp_combobox.get().strip()
+        start_date = start_entry.get().strip()
+        end_date = end_entry.get().strip()
+        if not fio:
+            messagebox.showerror("Ошибка", "Выберите сотрудника")
+            return
+        try:
+            s_date = datetime.strptime(start_date, "%d.%m.%Y")
+            e_date = datetime.strptime(end_date, "%d.%m.%Y")
+            if s_date > e_date:
+                messagebox.showerror("Ошибка", "Дата начала не может быть позже даты окончания")
+                return
+        except ValueError:
+            messagebox.showerror("Ошибка", "Неверный формат даты! Используйте ДД.ММ.ГГГГ")
+            start_entry.config(foreground="red")  # Подсветка ошибки
+            end_entry.config(foreground="red")
+            dialog.after(2000, lambda: [start_entry.config(foreground="black"), end_entry.config(foreground="black")])  # Сброс через 2 секунды
+            return
+
+        for emp in app.employees:
+            if emp["fio"] == fio:
+                for vac in emp.get("vacations", []):
+                    vac_start = datetime.strptime(vac["start_date"], "%d.%m.%Y")
+                    vac_end = datetime.strptime(vac["end_date"], "%d.%m.%Y")
+                    if not (e_date < vac_start or s_date > vac_end):
+                        messagebox.showerror("Ошибка", f"Отпуск для {fio} уже существует в периоде {vac['start_date']} - {vac['end_date']}")
+                        return
+                emp["vacations"].append({"start_date": start_date, "end_date": end_date})
+                break
+
+        app.data_modified = True
+        recalc_employee_vacations(app)
+        cache_vacations(app)
+        update_employee_list(app)
+        update_calendar(app)
+        dialog.destroy()
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Произошла ошибка: {str(e)}")
 
 def edit_employee_dialog(app):
     sel = app.employee_list.selection()
@@ -206,20 +309,40 @@ def edit_employee_dialog(app):
             for emp in app.employees:
                 if emp["fio"] == fio:
                     dialog = tk.Toplevel(app.root)
+                    dialog.transient(app.root)
+                    dialog.grab_set()
                     dialog.title("Редактировать сотрудника")
-                    dialog.geometry("400x150")
+                    dialog.geometry("300x150")
 
-                    ttk.Label(dialog, text="ФИО:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
+                    # Настройка веса строк и столбцов для центрирования
+                    dialog.grid_rowconfigure(0, weight=1)  # Пустое пространство сверху
+                    dialog.grid_rowconfigure(1, weight=0)  # ФИО
+                    dialog.grid_rowconfigure(2, weight=0)  # Должность
+                    dialog.grid_rowconfigure(3, weight=0)  # Кнопка
+                    dialog.grid_rowconfigure(4, weight=1)  # Пустое пространство снизу
+                    dialog.grid_columnconfigure(0, weight=1)  # Левый отступ
+                    dialog.grid_columnconfigure(1, weight=1)  # Основной контент
+                    dialog.grid_columnconfigure(2, weight=1)  # Правый отступ
+
+                    # ФИО
+                    ttk.Label(dialog, text="ФИО:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
                     fio_entry = ttk.Entry(dialog)
                     fio_entry.insert(0, emp["fio"])
-                    fio_entry.grid(row=0, column=1, padx=5, pady=5, sticky="we")
+                    fio_entry.grid(row=1, column=1, padx=5, pady=5, sticky="we")
 
-                    ttk.Label(dialog, text="Должность:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
+                    # Должность
+                    ttk.Label(dialog, text="Должность:").grid(row=2, column=0, padx=5, pady=5, sticky="e")
                     pos_entry = ttk.Entry(dialog)
                     pos_entry.insert(0, emp["position"])
-                    pos_entry.grid(row=1, column=1, padx=5, pady=5, sticky="we")
+                    pos_entry.grid(row=2, column=1, padx=5, pady=5, sticky="we")
+
+                    # Кнопка "Сохранить" с фиксированной шириной
+                    btn_frame = ttk.Frame(dialog)
+                    btn_frame.grid(row=3, column=0, columnspan=3, pady=10)
+                    ttk.Button(btn_frame, text="Сохранить", command=lambda: save_edit(), width=10).pack()
 
                     def save_edit():
+                        # Логика сохранения остается прежней
                         try:
                             new_fio = fio_entry.get().strip()
                             new_pos = pos_entry.get().strip()
@@ -237,7 +360,7 @@ def edit_employee_dialog(app):
                         except Exception as e:
                             messagebox.showerror("Ошибка", f"Произошла ошибка: {str(e)}")
 
-                    ttk.Button(dialog, text="Сохранить", command=save_edit).grid(row=2, column=0, columnspan=2, pady=10, sticky="we")
+                    center_window(dialog, app.root)
                     break
 
 def delete_vacation(app):
@@ -272,12 +395,6 @@ def delete_employee(app):
                 app.data_modified = True
                 update_employee_list(app)
                 update_calendar(app)
-
-def filter_employees(app, *args):
-    for child in app.employee_list.get_children():
-        app.employee_list.delete(child)
-    search_text = app.search_var.get().lower() if hasattr(app, 'search_var') else ""
-    apply_employee_filter(app, search_text)
 
 def apply_employee_filter(app, search_text):
     for emp in app.employees:
@@ -317,3 +434,48 @@ def show_employee_menu(app, event):
     if sel:
         app.employee_list.selection_set(sel)
         app.employee_menu.post(event.x_root, event.y_root)
+
+def validate_and_save_vacation(app, fio, start_date, end_date, dialog, old_vacation=None):
+    try:
+        if not fio:
+            messagebox.showerror("Ошибка", "Выберите сотрудника")
+            return False
+        s_date = datetime.strptime(start_date, "%d.%m.%Y")
+        e_date = datetime.strptime(end_date, "%d.%m.%Y")
+        if s_date > e_date:
+            messagebox.showerror("Ошибка", "Дата начала не может быть позже даты окончания")
+            return False
+        
+        for emp in app.employees:
+            if emp["fio"] == fio:
+                for vac in emp.get("vacations", []):
+                    vac_start = datetime.strptime(vac["start_date"], "%d.%m.%Y")
+                    vac_end = datetime.strptime(vac["end_date"], "%d.%m.%Y")
+                    if old_vacation and vac["start_date"] == old_vacation["start_date"] and vac["end_date"] == old_vacation["end_date"]:
+                        continue  # Пропускаем старый отпуск при редактировании
+                    if not (e_date < vac_start or s_date > vac_end):
+                        messagebox.showerror("Ошибка", f"Отпуск для {fio} уже существует в периоде {vac['start_date']} - {vac['end_date']}")
+                        return False
+                if old_vacation:
+                    for vac in emp["vacations"]:
+                        if vac["start_date"] == old_vacation["start_date"] and vac["end_date"] == old_vacation["end_date"]:
+                            vac["start_date"] = start_date
+                            vac["end_date"] = end_date
+                            break
+                else:
+                    emp["vacations"].append({"start_date": start_date, "end_date": end_date})
+                break
+        
+        app.data_modified = True
+        recalc_employee_vacations(app)
+        cache_vacations(app)
+        update_employee_list(app)
+        update_calendar(app)
+        dialog.destroy()
+        return True
+    except ValueError:
+        messagebox.showerror("Ошибка", "Неверный формат даты! Используйте ДД.ММ.ГГГГ")
+        return False
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Произошла ошибка: {str(e)}")
+        return False
