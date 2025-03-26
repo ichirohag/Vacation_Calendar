@@ -16,98 +16,118 @@ def get_next_available_day(app, date):
 
 
 def recalc_employee_vacations(app):
-    """Пересчитывает дни отпуска для всех сотрудников, исключая праздничные дни."""
+    """Пересчитывает дни отпуска для всех сотрудников, исключая праздничные дни, и обновляет периоды."""
     for emp in app.employees:
         all_vac_days = set()
         vacations = emp.get("vacations", {})
         for year, vac_list in vacations.items():
             for vac_period in vac_list:
                 try:
-                    s_date = datetime.strptime(
-                        vac_period["start_date"], "%d.%m.%Y")
-                    e_date = datetime.strptime(
-                        vac_period["end_date"], "%d.%m.%Y")
-                    days = (e_date - s_date).days + 1
-                    period_vac_days = [
-                        s_date + timedelta(days=i) for i in range(days)]
-                    non_holiday_days = [
-                        d for d in period_vac_days if not is_holiday(app, d)]
+                    s_date = datetime.strptime(vac_period["start_date"], "%d.%m.%Y")
+                    orig_e_date = datetime.strptime(
+                        vac_period.get("original_end_date", vac_period["end_date"]), "%d.%m.%Y")
+                    days = (orig_e_date - s_date).days + 1 
+                    period_vac_days = [s_date + timedelta(days=i) for i in range(days)]
+                    non_holiday_days = [d for d in period_vac_days if not is_holiday(app, d)]
+
+                    if len(non_holiday_days) < days:
+                        new_end_date = orig_e_date
+                        while len(non_holiday_days) < days:
+                            new_end_date = get_next_available_day(app, new_end_date)
+                            period_vac_days.append(new_end_date)
+                            non_holiday_days = [d for d in period_vac_days if not is_holiday(app, d)]
+                        vac_period["end_date"] = new_end_date.strftime("%d.%m.%Y")
+                        vac_period["adjusted"] = True
+                    else:
+                        holiday_count = sum(1 for d in period_vac_days if is_holiday(app, d))
+                        if holiday_count == 0:
+                            vac_period["end_date"] = vac_period["original_end_date"]
+                            vac_period.pop("adjusted", None)
+                        else:
+                            new_end_date = s_date + timedelta(days=days - 1)
+                            period_vac_days = [s_date + timedelta(days=i) for i in range(days)]
+                            non_holiday_days = [d for d in period_vac_days if not is_holiday(app, d)]
+                            while len(non_holiday_days) < days:
+                                new_end_date = get_next_available_day(app, new_end_date)
+                                period_vac_days.append(new_end_date)
+                                non_holiday_days = [d for d in period_vac_days if not is_holiday(app, d)]
+                            vac_period["end_date"] = new_end_date.strftime("%d.%m.%Y")
+                            vac_period["adjusted"] = True
+
                     all_vac_days.update(non_holiday_days)
                 except Exception as e:
-                    messagebox.showwarning(
-                        "Предупреждение", f"Ошибка обработки отпуска для {emp['fio']}: {str(e)}")
+                    messagebox.showwarning("Предупреждение", f"Ошибка обработки отпуска для {emp['fio']}: {str(e)}")
                     continue
-        emp["vacation"] = [d.strftime("%d.%m.%Y")
-                           for d in sorted(all_vac_days)]
+        emp["vacation"] = [d.strftime("%d.%m.%Y") for d in sorted(all_vac_days)]
     cache_vacations(app)
 
 
-def adjust_vacations_for_date(app, changed_date):
-    """Adjusts vacations affected by a changed date."""
-    year = str(changed_date.year)
-    for emp in app.employees:
-        vacations = emp.get("vacations", {}).get(year, [])
-        all_vac_days = set()
-        for vac in vacations:
-            try:
-                s_date = datetime.strptime(vac["start_date"], "%d.%m.%Y")
-                e_date = datetime.strptime(vac["end_date"], "%d.%m.%Y")
-                orig_end_date = datetime.strptime(
-                    vac.get("original_end_date", vac["end_date"]), "%d.%m.%Y")
-                days = (orig_end_date - s_date).days + 1
-                period_vac_days = [
-                    s_date + timedelta(days=i) for i in range((e_date - s_date).days + 1)]
-                non_holiday_days = [
-                    d for d in period_vac_days if not is_holiday(app, d)]
+# def adjust_vacations_for_date(app, changed_date):
+#     """Adjusts vacations affected by a changed date."""
+#     year = str(changed_date.year)
+#     for emp in app.employees:
+#         vacations = emp.get("vacations", {}).get(year, [])
+#         all_vac_days = set()
+#         for vac in vacations:
+#             try:
+#                 s_date = datetime.strptime(vac["start_date"], "%d.%m.%Y")
+#                 e_date = datetime.strptime(vac["end_date"], "%d.%m.%Y")
+#                 orig_end_date = datetime.strptime(
+#                     vac.get("original_end_date", vac["end_date"]), "%d.%m.%Y")
+#                 days = (orig_end_date - s_date).days + 1
+#                 period_vac_days = [
+#                     s_date + timedelta(days=i) for i in range((e_date - s_date).days + 1)]
+#                 non_holiday_days = [
+#                     d for d in period_vac_days if not is_holiday(app, d)]
 
-                if s_date <= changed_date <= e_date:
-                    holiday_count = sum(
-                        1 for d in period_vac_days if is_holiday(app, d))
-                    if is_holiday(app, changed_date):
+#                 if s_date <= changed_date <= e_date:
+#                     holiday_count = sum(
+#                         1 for d in period_vac_days if is_holiday(app, d))
+#                     if is_holiday(app, changed_date):
 
-                        new_end_date = orig_end_date
-                        while len([d for d in period_vac_days if not is_holiday(app, d)]) < days:
-                            new_end_date = get_next_available_day(
-                                app, new_end_date)
-                            period_vac_days.append(new_end_date)
-                        vac["end_date"] = new_end_date.strftime("%d.%m.%Y")
-                        vac["adjusted"] = True
-                        print(
-                            f"Extended vacation for {emp['fio']} to {vac['start_date']} - {vac['end_date']} due to holiday")
-                    else:
-                        if holiday_count == 0:
+#                         new_end_date = orig_end_date
+#                         while len([d for d in period_vac_days if not is_holiday(app, d)]) < days:
+#                             new_end_date = get_next_available_day(
+#                                 app, new_end_date)
+#                             period_vac_days.append(new_end_date)
+#                         vac["end_date"] = new_end_date.strftime("%d.%m.%Y")
+#                         vac["adjusted"] = True
+#                         print(
+#                             f"Extended vacation for {emp['fio']} to {vac['start_date']} - {vac['end_date']} due to holiday")
+#                     else:
+#                         if holiday_count == 0:
 
-                            vac["end_date"] = vac["original_end_date"]
-                            vac.pop("adjusted", None)
-                            print(
-                                f"Restored vacation for {emp['fio']} to {vac['start_date']} - {vac['end_date']}")
-                        else:
+#                             vac["end_date"] = vac["original_end_date"]
+#                             vac.pop("adjusted", None)
+#                             print(
+#                                 f"Restored vacation for {emp['fio']} to {vac['start_date']} - {vac['end_date']}")
+#                         else:
 
-                            period_vac_days = [
-                                s_date + timedelta(days=i) for i in range(days)]
-                            non_holiday_days = [
-                                d for d in period_vac_days if not is_holiday(app, d)]
-                            new_end_date = s_date + timedelta(days=days - 1)
-                            while len(non_holiday_days) < days:
-                                new_end_date = get_next_available_day(
-                                    app, new_end_date)
-                                period_vac_days.append(new_end_date)
-                                non_holiday_days = [
-                                    d for d in period_vac_days if not is_holiday(app, d)]
-                            vac["end_date"] = new_end_date.strftime("%d.%m.%Y")
-                            vac["adjusted"] = True
-                            print(
-                                f"Adjusted vacation for {emp['fio']} to {vac['start_date']} - {vac['end_date']} (other holidays remain)")
-                all_vac_days.update(non_holiday_days)
-            except Exception as e:
-                messagebox.showwarning(
-                    "Предупреждение", f"Ошибка обработки отпуска для {emp['fio']}: {str(e)}")
-                continue
-        emp["vacation"] = [d.strftime("%d.%m.%Y")
-                           for d in sorted(all_vac_days)]
-        print(
-            f"Employee {emp['fio']} vacation after recalc: {emp['vacation']}")
-    cache_vacations(app)
+#                             period_vac_days = [
+#                                 s_date + timedelta(days=i) for i in range(days)]
+#                             non_holiday_days = [
+#                                 d for d in period_vac_days if not is_holiday(app, d)]
+#                             new_end_date = s_date + timedelta(days=days - 1)
+#                             while len(non_holiday_days) < days:
+#                                 new_end_date = get_next_available_day(
+#                                     app, new_end_date)
+#                                 period_vac_days.append(new_end_date)
+#                                 non_holiday_days = [
+#                                     d for d in period_vac_days if not is_holiday(app, d)]
+#                             vac["end_date"] = new_end_date.strftime("%d.%m.%Y")
+#                             vac["adjusted"] = True
+#                             print(
+#                                 f"Adjusted vacation for {emp['fio']} to {vac['start_date']} - {vac['end_date']} (other holidays remain)")
+#                 all_vac_days.update(non_holiday_days)
+#             except Exception as e:
+#                 messagebox.showwarning(
+#                     "Предупреждение", f"Ошибка обработки отпуска для {emp['fio']}: {str(e)}")
+#                 continue
+#         emp["vacation"] = [d.strftime("%d.%m.%Y")
+#                            for d in sorted(all_vac_days)]
+#         print(
+#             f"Employee {emp['fio']} vacation after recalc: {emp['vacation']}")
+#     cache_vacations(app)
 
 
 def make_holiday(app, date):
@@ -122,9 +142,8 @@ def make_holiday(app, date):
     if year in app.weekends:
         app.weekends[year].discard(date)
     app.data_modified = True
-    adjust_vacations_for_date(app, date)
+    recalc_employee_vacations(app) 
     app.update_after_change()
-
 
 def make_workday(app, date):
     year = str(date.year)
@@ -138,9 +157,8 @@ def make_workday(app, date):
         app.weekends[year].discard(date)
     app.workdays[year].add(date)
     app.data_modified = True
-    adjust_vacations_for_date(app, date)
+    recalc_employee_vacations(app) 
     app.update_after_change()
-
 
 def make_weekend(app, date):
     year = str(date.year)
@@ -154,7 +172,7 @@ def make_weekend(app, date):
         app.workdays[year].discard(date)
     app.weekends[year].add(date)
     app.data_modified = True
-    adjust_vacations_for_date(app, date)
+    recalc_employee_vacations(app) 
     app.update_after_change()
 
 

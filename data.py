@@ -1,10 +1,17 @@
 import sqlite3
 import os
+import sys
 from datetime import datetime
 from tkinter import messagebox
 
-DB_FILE = os.path.join(os.path.dirname(
-    os.path.abspath(__file__)), "vacation_calendar.db")
+if getattr(sys, 'frozen', False):
+    # Если программа скомпилирована, используем путь к .exe
+    BASE_PATH = os.path.dirname(sys.executable)
+else:
+    # Если запускаем исходный код, используем путь к data.py
+    BASE_PATH = os.path.dirname(os.path.abspath(__file__))
+
+DB_FILE = os.path.join(BASE_PATH, "vacation_calendar.db")
 
 
 def init_db():
