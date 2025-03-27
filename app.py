@@ -15,10 +15,9 @@ class VacationCalendarApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Календарь отпусков")
-        self.root.geometry("1200x800")  # Начальный размер, можно менять
-        self.root.minsize(800, 600)     # Минимальный размер окна
+        self.root.geometry("1200x800")  
+        self.root.minsize(800, 600)   
 
-        # Initialize variables
         self.holidays = {}
         self.workdays = {}
         self.weekends = {}
@@ -31,11 +30,10 @@ class VacationCalendarApp:
         self.vacation_cache = {}
         self.month_frames = []
         self.day_widgets = {}
-        self.employees = []  # Default to empty list if load_data fails
+        self.employees = []  
 
-        # Setup UI and load data
         setup_ui(self)
-        load_data(self)  # May overwrite self.employees if successful
+        load_data(self) 
         recalc_employee_vacations(self)
         update_employee_list(self)
         cache_vacations(self)
@@ -54,15 +52,15 @@ class VacationCalendarApp:
             self.search_entry.focus_set()
 
     def update_after_change(self):
-        """Обновляет данные и UI после изменений."""
+        """Updates data and UI after changes."""
         recalc_employee_vacations(self)
         cache_vacations(self)
         update_employee_list(self)
         update_calendar(self)
 
     def save_data(self):
-        """Сохраняет данные в SQLite."""
-        save_data(self)  # Используем функцию из data.py
+        """Stores data in SQLite."""
+        save_data(self) 
 
     def on_window_restore(self, event):
         """Restores window and focuses search."""
@@ -74,8 +72,9 @@ class VacationCalendarApp:
     def on_closing(self):
         """Prompts save, then closes window."""
         for date_key in list(self.day_widgets.keys()):
-            day_frame, lbl = self.day_widgets[date_key]
+            day_frame, lbl = self.day_widgets.pop(date_key)
             day_frame.destroy()
+            del day_frame, lbl
         self.day_widgets.clear()
 
         if self.data_modified:

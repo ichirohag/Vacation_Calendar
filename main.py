@@ -33,7 +33,6 @@ def main():
     """Starts app, handles errors."""
     try:
         root = tk.Tk()
-        root.geometry("1200x800")  # Используем размер из app.py
         center_root_window(root)
         app = VacationCalendarApp(root)
         root.mainloop()

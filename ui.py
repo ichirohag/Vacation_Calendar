@@ -19,17 +19,28 @@ def setup_top_panel(app):
     app.year_spinbox.set(app.current_year)
     app.year_spinbox.pack(side="left")
     app.apply_btn = ttk.Button(
-        app.top_panel, text="Применить", command=lambda: apply_changes(app))
+        app.top_panel, text="Применить", command=lambda: safe_apply_changes(app))
     app.apply_btn.pack(side="left", padx=5)
     ttk.Separator(app.top_panel, orient='vertical').pack(
         side="left", padx=10, fill='y')
     app.save_btn = ttk.Button(
-        app.top_panel, text="Сохранить", command=lambda: app.save_data())
+        app.top_panel, text="Сохранить", command=lambda: safe_save_data(app))
     app.save_btn.pack(side="left", padx=5)
     app.about_btn = ttk.Button(
         app.top_panel, text="О программе", command=lambda: show_about(app))
     app.about_btn.pack(side="right", padx=5)
 
+def safe_apply_changes(app):
+    try:
+        apply_changes(app)
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Ошибка при применении изменений: {str(e)}")
+
+def safe_save_data(app):
+    try:
+        app.save_data()
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Ошибка при сохранении: {str(e)}")
 
 def setup_calendar_frame(app):
     app.calendar_frame = ttk.Frame(app.content_frame)

@@ -5,6 +5,17 @@ from tkcalendar import Calendar
 from datetime import datetime
 from utils import center_window, validate_date, on_date_input, show_calendar
 
+def add_context_menu(entry):
+    """Adds a context menu for copy/paste."""
+    menu = tk.Menu(entry, tearoff=0)
+    menu.add_command(label="Вырезать", command=lambda: entry.event_generate("<<Cut>>"))
+    menu.add_command(label="Копировать", command=lambda: entry.event_generate("<<Copy>>"))
+    menu.add_command(label="Вставить", command=lambda: entry.event_generate("<<Paste>>"))
+    entry.bind("<Button-3>", lambda event: menu.post(event.x_root, event.y_root))
+
+    entry.bind("<Control-c>", lambda event: entry.event_generate("<<Copy>>"))
+    entry.bind("<Control-v>", lambda event: entry.event_generate("<<Paste>>"))
+    entry.bind("<Control-x>", lambda event: entry.event_generate("<<Cut>>"))
 
 def create_date_entry(dialog, row, label_text, show_calendar_cmd):
     """Creates validated date entry."""
@@ -65,6 +76,7 @@ def add_employee_dialog(app):
         row=1, column=0, padx=5, pady=5, sticky="e")
     fio_entry = ttk.Entry(dialog)
     fio_entry.grid(row=1, column=1, padx=5, pady=5, sticky="we")
+    add_context_menu(fio_entry)   
     fio_error = ttk.Label(dialog, text="", foreground="red")
     fio_error.grid(row=1, column=2, padx=5, sticky="w")
 
@@ -72,6 +84,7 @@ def add_employee_dialog(app):
         row=2, column=0, padx=5, pady=5, sticky="e")
     pos_entry = ttk.Entry(dialog)
     pos_entry.grid(row=2, column=1, padx=5, pady=5, sticky="we")
+    add_context_menu(pos_entry)   
 
     btn_frame = ttk.Frame(dialog)
     btn_frame.grid(row=3, column=0, columnspan=3, pady=10)
@@ -99,13 +112,26 @@ def add_employee_dialog(app):
                 messagebox.showerror(
                     "Ошибка", "ФИО не может быть пустым или уже существует")
                 return
-            app.employees.append(
-                {"fio": fio, "position": pos, "vacations": {}})
+            if not pos:
+                messagebox.showerror("Ошибка", "Должность не может быть пустой")
+                return
+            if any(emp["fio"] == fio for emp in app.employees):
+                messagebox.showerror("Ошибка", "Сотрудник с таким ФИО уже существует")
+                return
+            app.employees.append({"fio": fio, "position": pos, "vacations": {}})
             app.data_modified = True
             app.update_after_change()
             dialog.destroy()
         except Exception as e:
             messagebox.showerror("Ошибка", f"Произошла ошибка: {str(e)}")
+
+    btn_frame = ttk.Frame(dialog)
+    btn_frame.grid(row=3, column=0, columnspan=3, pady=10)
+    save_btn = ttk.Button(btn_frame, text="Сохранить", command=save_emp, width=10)
+    save_btn.pack()
+    
+      
+    dialog.bind("<Return>", lambda event: save_emp())
 
     center_window(dialog, app.root)
 
@@ -143,14 +169,27 @@ def add_vacation_dialog(app, employee_fio=None):
         dialog, 3, "Отпуск по:", lambda: show_calendar(app, end_entry))
 
     def save_vacation_wrapper():
-        """Saves vacation data."""
-        validate_and_save_vacation(app, emp_combobox.get().strip(
-        ), start_entry.get().strip(), end_entry.get().strip(), dialog)
-
+        fio = emp_combobox.get().strip()
+        start = start_entry.get().strip()
+        end = end_entry.get().strip()
+        if not fio:
+            messagebox.showerror("Ошибка", "Выберите сотрудника")
+            return
+        if not start or start == "ДД.ММ.ГГГГ":
+            messagebox.showerror("Ошибка", "Поле 'Отпуск с' не может быть пустым")
+            return
+        if not end or end == "ДД.ММ.ГГГГ":
+            messagebox.showerror("Ошибка", "Поле 'Отпуск по' не может быть пустым")
+            return
+        validate_and_save_vacation(app, fio, start, end, dialog)
+    
     btn_frame = ttk.Frame(dialog)
     btn_frame.grid(row=4, column=0, columnspan=3, pady=10)
-    ttk.Button(btn_frame, text="Сохранить",
-               command=save_vacation_wrapper, width=10).pack()
+    save_btn = ttk.Button(btn_frame, text="Сохранить", command=save_vacation_wrapper, width=10)
+    save_btn.pack()
+
+      
+    dialog.bind("<Return>", lambda event: save_vacation_wrapper())
 
     center_window(dialog, app.root)
     dialog.after(100, dialog.focus_set)
@@ -186,6 +225,7 @@ def edit_employee_dialog(app):
                     fio_entry.insert(0, emp["fio"])
                     fio_entry.grid(row=1, column=1, padx=5,
                                    pady=5, sticky="we")
+                    add_context_menu(fio_entry)   
 
                     ttk.Label(dialog, text="Должность:").grid(
                         row=2, column=0, padx=5, pady=5, sticky="e")
@@ -193,6 +233,7 @@ def edit_employee_dialog(app):
                     pos_entry.insert(0, emp["position"])
                     pos_entry.grid(row=2, column=1, padx=5,
                                    pady=5, sticky="we")
+                    add_context_menu(pos_entry)   
 
                     btn_frame = ttk.Frame(dialog)
                     btn_frame.grid(row=3, column=0, columnspan=3, pady=10)
@@ -200,26 +241,30 @@ def edit_employee_dialog(app):
                                command=lambda: save_edit(), width=10).pack()
 
                     def save_edit():
-                        """Saves edited employee."""
-                        try:
-                            new_fio = fio_entry.get().strip()
-                            new_pos = pos_entry.get().strip()
-                            if not new_fio:
-                                messagebox.showerror(
-                                    "Ошибка", "ФИО не может быть пустым")
-                                return
-                            if new_fio != fio and any(e["fio"] == new_fio for e in app.employees):
-                                messagebox.showerror(
-                                    "Ошибка", "Сотрудник с таким ФИО уже существует")
-                                return
-                            emp["fio"] = new_fio
-                            emp["position"] = new_pos
-                            app.data_modified = True
-                            app.update_after_change()
-                            dialog.destroy()
-                        except Exception as e:
-                            messagebox.showerror(
-                                "Ошибка", f"Произошла ошибка: {str(e)}")
+                        new_fio = fio_entry.get().strip()
+                        new_pos = pos_entry.get().strip()
+                        if not new_fio:
+                            messagebox.showerror("Ошибка", "ФИО не может быть пустым")
+                            return
+                        if not new_pos:
+                            messagebox.showerror("Ошибка", "Должность не может быть пустой")
+                            return
+                        if new_fio != fio and any(e["fio"] == new_fio for e in app.employees):
+                            messagebox.showerror("Ошибка", "Сотрудник с таким ФИО уже существует")
+                            return
+                        emp["fio"] = new_fio
+                        emp["position"] = new_pos
+                        app.data_modified = True
+                        app.update_after_change()
+                        dialog.destroy()
+
+                    btn_frame = ttk.Frame(dialog)
+                    btn_frame.grid(row=3, column=0, columnspan=3, pady=10)
+                    save_btn = ttk.Button(btn_frame, text="Сохранить", command=save_edit, width=10)
+                    save_btn.pack()
+                    
+                      
+                    dialog.bind("<Return>", lambda event: save_edit())
 
                     center_window(dialog, app.root)
                     break
@@ -279,9 +324,27 @@ def edit_vacation_dialog(app):
                        command=lambda: save_edit(), width=10).pack()
 
             def save_edit():
-                """Saves edited vacation."""
-                validate_and_save_vacation(app, emp_combobox.get().strip(), start_entry.get().strip(
-                ), end_entry.get().strip(), dialog, {"start_date": old_start, "end_date": old_end})
+                fio = emp_combobox.get().strip()
+                start = start_entry.get().strip()
+                end = end_entry.get().strip()
+                if not fio:
+                    messagebox.showerror("Ошибка", "Выберите сотрудника")
+                    return
+                if not start or start == "ДД.ММ.ГГГГ":
+                    messagebox.showerror("Ошибка", "Поле 'Отпуск с' не может быть пустым")
+                    return
+                if not end or end == "ДД.ММ.ГГГГ":
+                    messagebox.showerror("Ошибка", "Поле 'Отпуск по' не может быть пустым")
+                    return
+                validate_and_save_vacation(app, fio, start, end, dialog, {"start_date": old_start, "end_date": old_end})
+
+            btn_frame = ttk.Frame(dialog)
+            btn_frame.grid(row=4, column=0, columnspan=3, pady=10)
+            save_btn = ttk.Button(btn_frame, text="Сохранить", command=save_edit, width=10)
+            save_btn.pack()
+            
+              
+            dialog.bind("<Return>", lambda event: save_edit())
 
             center_window(dialog, app.root)
             dialog.after(100, dialog.focus_set)

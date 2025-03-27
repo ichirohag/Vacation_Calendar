@@ -32,15 +32,12 @@ def recalc_employee_vacations(app):
                     orig_e_date = datetime.strptime(end_date_value, "%d.%m.%Y")
                     curr_e_date = datetime.strptime(vac_period["end_date"], "%d.%m.%Y")
                     
-                    # Определяем исходную длительность отпуска
                     original_days = (orig_e_date - s_date).days + 1
                     
-                    # Текущий период и рабочие дни
                     current_days = (curr_e_date - s_date).days + 1
                     period_vac_days = [s_date + timedelta(days=i) for i in range(current_days)]
                     non_holiday_days = [d for d in period_vac_days if not is_holiday(app, d)]
 
-                    # Если рабочих дней меньше, чем нужно
                     if len(non_holiday_days) < original_days:
                         new_end_date = curr_e_date
                         while len(non_holiday_days) < original_days:
@@ -49,16 +46,12 @@ def recalc_employee_vacations(app):
                             non_holiday_days = [d for d in period_vac_days if not is_holiday(app, d)]
                         vac_period["end_date"] = new_end_date.strftime("%d.%m.%Y")
                         vac_period["adjusted"] = True
-                    # Если рабочих дней больше или равно, проверяем необходимость корректировки
                     else:
                         holiday_count = sum(1 for d in period_vac_days if is_holiday(app, d))
                         if holiday_count == 0:
-                            # Если праздников нет, возвращаем оригинальную дату окончания
                             vac_period["end_date"] = orig_e_date.strftime("%d.%m.%Y")
                             vac_period.pop("adjusted", None)
                         else:
-                            # Если праздники есть, но рабочих дней достаточно, оставляем текущую дату
-                            # Или пересчитываем, если текущая длительность больше необходимой
                             if len(non_holiday_days) > original_days:
                                 new_end_date = s_date
                                 non_holiday_days = []
@@ -75,75 +68,6 @@ def recalc_employee_vacations(app):
                     continue
         emp["vacation"] = [d.strftime("%d.%m.%Y") for d in sorted(all_vac_days)]
     cache_vacations(app)
-
-
-# def adjust_vacations_for_date(app, changed_date):
-#     """Adjusts vacations affected by a changed date."""
-#     year = str(changed_date.year)
-#     for emp in app.employees:
-#         vacations = emp.get("vacations", {}).get(year, [])
-#         all_vac_days = set()
-#         for vac in vacations:
-#             try:
-#                 s_date = datetime.strptime(vac["start_date"], "%d.%m.%Y")
-#                 e_date = datetime.strptime(vac["end_date"], "%d.%m.%Y")
-#                 orig_end_date = datetime.strptime(
-#                     vac.get("original_end_date", vac["end_date"]), "%d.%m.%Y")
-#                 days = (orig_end_date - s_date).days + 1
-#                 period_vac_days = [
-#                     s_date + timedelta(days=i) for i in range((e_date - s_date).days + 1)]
-#                 non_holiday_days = [
-#                     d for d in period_vac_days if not is_holiday(app, d)]
-
-#                 if s_date <= changed_date <= e_date:
-#                     holiday_count = sum(
-#                         1 for d in period_vac_days if is_holiday(app, d))
-#                     if is_holiday(app, changed_date):
-
-#                         new_end_date = orig_end_date
-#                         while len([d for d in period_vac_days if not is_holiday(app, d)]) < days:
-#                             new_end_date = get_next_available_day(
-#                                 app, new_end_date)
-#                             period_vac_days.append(new_end_date)
-#                         vac["end_date"] = new_end_date.strftime("%d.%m.%Y")
-#                         vac["adjusted"] = True
-#                         print(
-#                             f"Extended vacation for {emp['fio']} to {vac['start_date']} - {vac['end_date']} due to holiday")
-#                     else:
-#                         if holiday_count == 0:
-
-#                             vac["end_date"] = vac["original_end_date"]
-#                             vac.pop("adjusted", None)
-#                             print(
-#                                 f"Restored vacation for {emp['fio']} to {vac['start_date']} - {vac['end_date']}")
-#                         else:
-
-#                             period_vac_days = [
-#                                 s_date + timedelta(days=i) for i in range(days)]
-#                             non_holiday_days = [
-#                                 d for d in period_vac_days if not is_holiday(app, d)]
-#                             new_end_date = s_date + timedelta(days=days - 1)
-#                             while len(non_holiday_days) < days:
-#                                 new_end_date = get_next_available_day(
-#                                     app, new_end_date)
-#                                 period_vac_days.append(new_end_date)
-#                                 non_holiday_days = [
-#                                     d for d in period_vac_days if not is_holiday(app, d)]
-#                             vac["end_date"] = new_end_date.strftime("%d.%m.%Y")
-#                             vac["adjusted"] = True
-#                             print(
-#                                 f"Adjusted vacation for {emp['fio']} to {vac['start_date']} - {vac['end_date']} (other holidays remain)")
-#                 all_vac_days.update(non_holiday_days)
-#             except Exception as e:
-#                 messagebox.showwarning(
-#                     "Предупреждение", f"Ошибка обработки отпуска для {emp['fio']}: {str(e)}")
-#                 continue
-#         emp["vacation"] = [d.strftime("%d.%m.%Y")
-#                            for d in sorted(all_vac_days)]
-#         print(
-#             f"Employee {emp['fio']} vacation after recalc: {emp['vacation']}")
-#     cache_vacations(app)
-
 
 def make_holiday(app, date):
     year = str(date.year)
@@ -192,14 +116,14 @@ def make_weekend(app, date):
 
 
 def update_calendar(app):
-    """Обновляет календарь на основе кэша отпусков."""
+    """Updates the calendar based on the vacation cache."""
     app.root.config(cursor="watch")
     app.root.update_idletasks()
 
     for date_key in list(app.day_widgets.keys()):
-        day_frame, lbl = app.day_widgets[date_key]
+        day_frame, lbl = app.day_widgets.pop(date_key)
         day_frame.destroy()
-    app.day_widgets.clear()
+        del day_frame, lbl 
 
     for i, m_frame in enumerate(app.month_frames):
         month_num = i + 1
@@ -305,7 +229,6 @@ def get_employee_position(app, fio):
 def export_to_csv(app):
     """Exports calendar and employee list to separate HTML files."""
     try:
-        # Запрашиваем путь для файла календаря
         calendar_file_path = filedialog.asksaveasfilename(
             defaultextension=".html",
             filetypes=[("HTML файлы", "*.html"), ("Все файлы", "*.*")],
@@ -315,7 +238,6 @@ def export_to_csv(app):
         if not calendar_file_path:
             return
 
-        # Запрашиваем путь для файла списка сотрудников
         employees_file_path = filedialog.asksaveasfilename(
             defaultextension=".html",
             filetypes=[("HTML файлы", "*.html"), ("Все файлы", "*.*")],
@@ -325,7 +247,6 @@ def export_to_csv(app):
         if not employees_file_path:
             return
 
-        # Общий стиль CSS для календаря (как в 1234.html)
         calendar_css = """
         <style>
             table, th, td { border: 1px solid black; border-collapse: collapse; padding: 5px; text-align: center; }
@@ -339,7 +260,6 @@ def export_to_csv(app):
         </style>
         """
 
-        # Стиль CSS для списка сотрудников
         employees_css = """
         <style>
             table, th, td { border: 1px solid black; border-collapse: collapse; padding: 5px; text-align: center; }
@@ -347,7 +267,6 @@ def export_to_csv(app):
         </style>
         """
 
-        # Подготовка данных
         employee_indices = {emp["fio"]: idx + 1 for idx, emp in enumerate(sorted(app.employees, key=lambda x: x["fio"]))}
         vacation_dict = {}
         for emp in app.employees:
@@ -363,7 +282,6 @@ def export_to_csv(app):
                 except (ValueError, TypeError):
                     continue
 
-        # Экспорт списка сотрудников
         with open(employees_file_path, 'w', encoding='utf-8') as emp_file:
             emp_file.write('<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n')
             emp_file.write(f'<title>Список сотрудников с отпусками на {app.current_year} год</title>\n')
@@ -394,7 +312,6 @@ def export_to_csv(app):
 
             emp_file.write('</table>\n</body>\n</html>')
 
-        # Экспорт календаря
         with open(calendar_file_path, 'w', encoding='utf-8') as html_file:
             html_file.write('<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n')
             html_file.write(f'<title>Календарь отпусков на {app.current_year} год</title>\n')
@@ -437,7 +354,6 @@ def export_to_csv(app):
                                 if date == today:
                                     cell_class += " today" if cell_class else "today"
                                 
-                                # Добавляем индексы сотрудников для начала отпуска
                                 emp_ids = []
                                 for emp in app.employees:
                                     emp_id = employee_indices[emp["fio"]]

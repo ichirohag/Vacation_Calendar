@@ -4,7 +4,7 @@ from utils import is_holiday
 
 
 def cache_vacations(app):
-    """Кэширует дни отпуска, исключая праздничные дни."""
+    """Caches vacation days excluding holidays."""
     app.vacation_cache.clear()
     for emp in app.employees:
         vacation_days = emp.get("vacation", [])

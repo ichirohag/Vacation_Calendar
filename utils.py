@@ -91,7 +91,12 @@ def show_calendar(app, entry):
     top.transient(app.root)
     top.grab_set()
     top.title("Выбрать дату")
+    
+    # Устанавливаем размер и центрируем до отображения
     top.geometry("300x300")
+    center_window(top, app.root)
+    top.update_idletasks()  # Обновляем геометрию перед отображением
+
     frame = ttk.Frame(top)
     frame.pack(expand=True, padx=10, pady=10)
 
@@ -106,17 +111,13 @@ def show_calendar(app, entry):
 
     def set_date():
         selected_date = cal.get_date()
-        print(f"Selected date: '{selected_date}'")
         entry.config(validate="none")
         entry.delete(0, tk.END)
         entry.insert(0, selected_date)
         entry.config(foreground="black")
         entry.config(validate="key")
-        print(f"Entry content after insert: '{entry.get()}'")
         top.destroy()
         entry.focus_set()
-
-    center_window(top, app.root)
 
 
 def is_weekend(app, date):
