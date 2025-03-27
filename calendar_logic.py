@@ -16,43 +16,58 @@ def get_next_available_day(app, date):
 
 
 def recalc_employee_vacations(app):
-    """Пересчитывает дни отпуска для всех сотрудников, исключая праздничные дни, и обновляет периоды."""
     for emp in app.employees:
         all_vac_days = set()
         vacations = emp.get("vacations", {})
         for year, vac_list in vacations.items():
             for vac_period in vac_list:
+                print(f"Обработка отпуска для {emp['fio']}: {vac_period}")
                 try:
+                    if "start_date" not in vac_period or "end_date" not in vac_period:
+                        raise KeyError("Отсутствуют обязательные ключи start_date или end_date")
                     s_date = datetime.strptime(vac_period["start_date"], "%d.%m.%Y")
-                    orig_e_date = datetime.strptime(
-                        vac_period.get("original_end_date", vac_period["end_date"]), "%d.%m.%Y")
-                    days = (orig_e_date - s_date).days + 1 
-                    period_vac_days = [s_date + timedelta(days=i) for i in range(days)]
+                    end_date_value = vac_period.get("original_end_date", vac_period["end_date"])
+                    if not isinstance(end_date_value, str):
+                        raise ValueError(f"end_date_value не строка: {end_date_value}")
+                    orig_e_date = datetime.strptime(end_date_value, "%d.%m.%Y")
+                    curr_e_date = datetime.strptime(vac_period["end_date"], "%d.%m.%Y")
+                    
+                    # Определяем исходную длительность отпуска
+                    original_days = (orig_e_date - s_date).days + 1
+                    
+                    # Текущий период и рабочие дни
+                    current_days = (curr_e_date - s_date).days + 1
+                    period_vac_days = [s_date + timedelta(days=i) for i in range(current_days)]
                     non_holiday_days = [d for d in period_vac_days if not is_holiday(app, d)]
 
-                    if len(non_holiday_days) < days:
-                        new_end_date = orig_e_date
-                        while len(non_holiday_days) < days:
+                    # Если рабочих дней меньше, чем нужно
+                    if len(non_holiday_days) < original_days:
+                        new_end_date = curr_e_date
+                        while len(non_holiday_days) < original_days:
                             new_end_date = get_next_available_day(app, new_end_date)
                             period_vac_days.append(new_end_date)
                             non_holiday_days = [d for d in period_vac_days if not is_holiday(app, d)]
                         vac_period["end_date"] = new_end_date.strftime("%d.%m.%Y")
                         vac_period["adjusted"] = True
+                    # Если рабочих дней больше или равно, проверяем необходимость корректировки
                     else:
                         holiday_count = sum(1 for d in period_vac_days if is_holiday(app, d))
                         if holiday_count == 0:
-                            vac_period["end_date"] = vac_period["original_end_date"]
+                            # Если праздников нет, возвращаем оригинальную дату окончания
+                            vac_period["end_date"] = orig_e_date.strftime("%d.%m.%Y")
                             vac_period.pop("adjusted", None)
                         else:
-                            new_end_date = s_date + timedelta(days=days - 1)
-                            period_vac_days = [s_date + timedelta(days=i) for i in range(days)]
-                            non_holiday_days = [d for d in period_vac_days if not is_holiday(app, d)]
-                            while len(non_holiday_days) < days:
-                                new_end_date = get_next_available_day(app, new_end_date)
-                                period_vac_days.append(new_end_date)
-                                non_holiday_days = [d for d in period_vac_days if not is_holiday(app, d)]
-                            vac_period["end_date"] = new_end_date.strftime("%d.%m.%Y")
-                            vac_period["adjusted"] = True
+                            # Если праздники есть, но рабочих дней достаточно, оставляем текущую дату
+                            # Или пересчитываем, если текущая длительность больше необходимой
+                            if len(non_holiday_days) > original_days:
+                                new_end_date = s_date
+                                non_holiday_days = []
+                                while len(non_holiday_days) < original_days:
+                                    if not is_holiday(app, new_end_date):
+                                        non_holiday_days.append(new_end_date)
+                                    new_end_date += timedelta(days=1)
+                                vac_period["end_date"] = non_holiday_days[-1].strftime("%d.%m.%Y")
+                                vac_period["adjusted"] = True if non_holiday_days[-1] != orig_e_date else False
 
                     all_vac_days.update(non_holiday_days)
                 except Exception as e:
@@ -288,9 +303,9 @@ def get_employee_position(app, fio):
 
 
 def export_to_csv(app):
-    """Exports calendar and employee list to separate HTML files with employee indices."""
+    """Exports calendar and employee list to separate HTML files."""
     try:
-
+        # Запрашиваем путь для файла календаря
         calendar_file_path = filedialog.asksaveasfilename(
             defaultextension=".html",
             filetypes=[("HTML файлы", "*.html"), ("Все файлы", "*.*")],
@@ -300,6 +315,7 @@ def export_to_csv(app):
         if not calendar_file_path:
             return
 
+        # Запрашиваем путь для файла списка сотрудников
         employees_file_path = filedialog.asksaveasfilename(
             defaultextension=".html",
             filetypes=[("HTML файлы", "*.html"), ("Все файлы", "*.*")],
@@ -309,22 +325,30 @@ def export_to_csv(app):
         if not employees_file_path:
             return
 
-        css = """
+        # Общий стиль CSS для календаря (как в 1234.html)
+        calendar_css = """
         <style>
             table, th, td { border: 1px solid black; border-collapse: collapse; padding: 5px; text-align: center; }
-            th { background-color: 
             .month-table { display: inline-block; vertical-align: top; margin: 10px; }
-            .vacation { background-color: 
-            .vacation-overlap { background-color: 
-            .holiday { color: 
-            .weekend { color: 
-            .today { color: 
+            .vacation { background-color: #90EE90; }
+            .vacation-overlap { background-color: #FFA500; }
+            .holiday { color: #FF0000; }
+            .weekend { color: #808080; }
+            .today { color: #0000FF; }
             .employee-id { font-size: 10px; vertical-align: super; color: blue; }
         </style>
         """
 
-        employee_indices = {emp["fio"]: idx + 1 for idx,
-                            emp in enumerate(sorted(app.employees, key=lambda x: x["fio"]))}
+        # Стиль CSS для списка сотрудников
+        employees_css = """
+        <style>
+            table, th, td { border: 1px solid black; border-collapse: collapse; padding: 5px; text-align: center; }
+            th { background-color: #f2f2f2; }
+        </style>
+        """
+
+        # Подготовка данных
+        employee_indices = {emp["fio"]: idx + 1 for idx, emp in enumerate(sorted(app.employees, key=lambda x: x["fio"]))}
         vacation_dict = {}
         for emp in app.employees:
             vacation_days = emp.get("vacation", [])
@@ -339,64 +363,59 @@ def export_to_csv(app):
                 except (ValueError, TypeError):
                     continue
 
+        # Экспорт списка сотрудников
         with open(employees_file_path, 'w', encoding='utf-8') as emp_file:
-            emp_file.write(
-                '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n')
-            emp_file.write(
-                f'<title>Список сотрудников с отпусками на {app.current_year} год</title>\n')
-            emp_file.write(css)
+            emp_file.write('<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n')
+            emp_file.write(f'<title>Список сотрудников с отпусками на {app.current_year} год</title>\n')
+            emp_file.write(employees_css)
             emp_file.write('</head>\n<body>\n')
-            emp_file.write(
-                f'<h2>Список сотрудников с отпусками на {app.current_year} год</h2>\n')
+            emp_file.write(f'<h2>Список сотрудников с отпусками на {app.current_year} год</h2>\n')
             emp_file.write('<table style="width:100%">\n')
-            emp_file.write(
-                '<tr><th>ID</th><th>ФИО</th><th>Должность</th><th>Период отпуска</th></tr>\n')
+            emp_file.write('<tr><th>ID</th><th>ФИО</th><th>Должность</th><th>Период отпуска</th></tr>\n')
 
             for emp in sorted(app.employees, key=lambda x: x["fio"]):
-                this_year_vacations = emp.get(
-                    "vacations", {}).get(str(app.current_year), [])
-                emp_id = employee_indices[emp["fio"]]
+                this_year_vacations = emp.get("vacations", {}).get(str(app.current_year), [])
                 if this_year_vacations:
-                    vacation_periods = [
-                        f"{vac['start_date']} - {vac['end_date']}" for vac in this_year_vacations]
-                    emp_file.write(
-                        f'<tr><td>{emp_id}</td><td>{emp["fio"]}</td><td>{emp["position"]}</td><td>{vacation_periods[0]}</td></tr>\n')
+                    vacation_periods = []
+                    for vac in this_year_vacations:
+                        try:
+                            start = vac["start_date"]
+                            end = vac["end_date"]
+                            vacation_periods.append(f"{start} - {end}")
+                        except (ValueError, KeyError):
+                            continue
+                    emp_id = employee_indices[emp["fio"]]
+                    emp_file.write(f'<tr><td>{emp_id}</td><td>{emp["fio"]}</td><td>{emp["position"]}</td><td>{vacation_periods[0]}</td></tr>\n')
                     for period in vacation_periods[1:]:
-                        emp_file.write(
-                            f'<tr><td></td><td></td><td></td><td>{period}</td></tr>\n')
+                        emp_file.write(f'<tr><td></td><td></td><td></td><td>{period}</td></tr>\n')
                 else:
-                    emp_file.write(
-                        f'<tr><td>{emp_id}</td><td>{emp["fio"]}</td><td>{emp["position"]}</td><td>-</td></tr>\n')
+                    emp_id = employee_indices[emp["fio"]]
+                    emp_file.write(f'<tr><td>{emp_id}</td><td>{emp["fio"]}</td><td>{emp["position"]}</td><td>-</td></tr>\n')
 
             emp_file.write('</table>\n</body>\n</html>')
 
+        # Экспорт календаря
         with open(calendar_file_path, 'w', encoding='utf-8') as html_file:
-            html_file.write(
-                '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n')
-            html_file.write(
-                f'<title>Календарь отпусков на {app.current_year} год</title>\n')
-            html_file.write(css)
+            html_file.write('<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n')
+            html_file.write(f'<title>Календарь отпусков на {app.current_year} год</title>\n')
+            html_file.write(calendar_css)
             html_file.write('</head>\n<body>\n')
-            html_file.write(
-                f'<h2>Календарь отпусков на {app.current_year} год</h2>\n')
+            html_file.write(f'<h2>Календарь отпусков на {app.current_year} год</h2>\n')
 
             months = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
                       "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
             weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
             for row in range(4):
-                html_file.write(
-                    '<div style="display: flex; justify-content: space-around;">\n')
+                html_file.write('<div style="display: flex; justify-content: space-around;">\n')
                 for col in range(3):
                     month_idx = row * 3 + col
                     if month_idx >= len(months):
                         break
                     month_name = months[month_idx]
                     html_file.write('<table class="month-table">\n')
-                    html_file.write(
-                        f'<tr><th colspan="7">{month_name}</th></tr>\n')
-                    html_file.write(
-                        '<tr>' + ''.join(f'<th>{wd}</th>' for wd in weekdays) + '</tr>\n')
+                    html_file.write(f'<tr><th colspan="7">{month_name}</th></tr>\n')
+                    html_file.write('<tr>' + ''.join(f'<th>{wd}</th>' for wd in weekdays) + '</tr>\n')
 
                     cal = monthcalendar(app.current_year, month_idx + 1)
                     today = datetime.now().date()
@@ -407,45 +426,37 @@ def export_to_csv(app):
                             if day == 0:
                                 html_file.write('<td></td>\n')
                             else:
-                                date = datetime(
-                                    app.current_year, month_idx + 1, day).date()
+                                date = datetime(app.current_year, month_idx + 1, day).date()
                                 date_key = date.strftime("%Y-%m-%d")
-                                vacation_employees = vacation_dict.get(
-                                    date_key, [])
-                                cell_class = "vacation-overlap" if len(
-                                    vacation_employees) > 1 else "vacation" if vacation_employees else ""
+                                vacation_employees = vacation_dict.get(date_key, [])
+                                cell_class = "vacation-overlap" if len(vacation_employees) > 1 else "vacation" if vacation_employees else ""
                                 if is_holiday(app, date):
                                     cell_class += " holiday" if cell_class else "holiday"
                                 elif is_weekend(app, date):
                                     cell_class += " weekend" if cell_class else "weekend"
                                 if date == today:
                                     cell_class += " today" if cell_class else "today"
-
+                                
+                                # Добавляем индексы сотрудников для начала отпуска
                                 emp_ids = []
                                 for emp in app.employees:
                                     emp_id = employee_indices[emp["fio"]]
                                     for vac in emp.get("vacations", {}).get(str(app.current_year), []):
-                                        start_date = datetime.strptime(
-                                            vac["start_date"], "%d.%m.%Y").date()
+                                        start_date = datetime.strptime(vac["start_date"], "%d.%m.%Y").date()
                                         if start_date == date:
                                             emp_ids.append(str(emp_id))
-                                emp_ids_str = '<span class="employee-id">' + \
-                                    ','.join(emp_ids) + \
-                                    '</span>' if emp_ids else ""
+                                emp_ids_str = '<span class="employee-id">' + ','.join(emp_ids) + '</span>' if emp_ids else ""
                                 tooltip = f' title="Отпуск: {", ".join(vacation_employees)}"' if vacation_employees else ""
-                                html_file.write(
-                                    f'<td class="{cell_class}"{tooltip}>{day}{emp_ids_str}</td>\n')
+                                html_file.write(f'<td class="{cell_class}"{tooltip}>{day}{emp_ids_str}</td>\n')
                         html_file.write('</tr>\n')
                     html_file.write('</table>\n')
                 html_file.write('</div>\n')
 
             html_file.write('</body>\n</html>')
 
-        messagebox.showinfo(
-            "Готово", f"Экспорт завершен.\nКалендарь: {calendar_file_path}\nСписок сотрудников: {employees_file_path}")
+        messagebox.showinfo("Готово", f"Экспорт завершен.\nКалендарь: {calendar_file_path}\nСписок сотрудников: {employees_file_path}")
     except Exception as e:
         messagebox.showerror("Ошибка", f"Ошибка при экспорте в HTML: {str(e)}")
-
 
 def show_about(app):
     """Shows about dialog."""

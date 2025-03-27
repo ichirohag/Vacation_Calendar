@@ -27,6 +27,7 @@ def init_db():
         employee_id INTEGER,
         start_date TEXT NOT NULL,
         end_date TEXT NOT NULL,
+        original_end_date TEXT,
         year INTEGER NOT NULL,
         FOREIGN KEY (employee_id) REFERENCES employees(id))''')
     c.execute('''CREATE TABLE IF NOT EXISTS special_days (
@@ -58,14 +59,16 @@ def load_data(app):
         app.employees = [{"id": row[0], "fio": row[1],
                           "position": row[2], "vacations": {}} for row in c.fetchall()]
 
-        c.execute("SELECT employee_id, start_date, end_date, year FROM vacations")
-        for emp_id, start_date, end_date, year in c.fetchall():
+        c.execute("SELECT employee_id, start_date, end_date, original_end_date, year FROM vacations")
+        for emp_id, start_date, end_date, orig_end_date, year in c.fetchall():
             for emp in app.employees:
                 if emp["id"] == emp_id:
                     if str(year) not in emp["vacations"]:
                         emp["vacations"][str(year)] = []
-                    emp["vacations"][str(year)].append(
-                        {"start_date": start_date, "end_date": end_date})
+                    vac_data = {"start_date": start_date, "end_date": end_date}
+                    if orig_end_date:  # Добавляем original_end_date, если оно есть
+                        vac_data["original_end_date"] = orig_end_date
+                    emp["vacations"][str(year)].append(vac_data)
 
         app.holidays = {}
         app.workdays = {}
@@ -96,7 +99,6 @@ def load_data(app):
         app.workdays = {}
         app.weekends = {}
 
-
 def save_data(app):
     """Сохраняет только изменённые данные в SQLite."""
     try:
@@ -120,8 +122,8 @@ def save_data(app):
                 c.execute(
                     "DELETE FROM vacations WHERE employee_id = ? AND year = ?", (emp["id"], int(year)))
                 for vac in vac_list:
-                    c.execute("INSERT INTO vacations (employee_id, start_date, end_date, year) VALUES (?, ?, ?, ?)",
-                              (emp["id"], vac["start_date"], vac["end_date"], int(year)))
+                    c.execute("INSERT INTO vacations (employee_id, start_date, end_date, original_end_date, year) VALUES (?, ?, ?, ?, ?)",
+                              (emp["id"], vac["start_date"], vac["end_date"], vac.get("original_end_date"), int(year)))
 
         c.execute("DELETE FROM special_days")
         for year, dates in app.holidays.items():
@@ -140,8 +142,8 @@ def save_data(app):
         conn.commit()
         conn.close()
         app.data_modified = False
-
+        messagebox.showinfo("Успех", "Данные успешно сохранены в базу данных.")
         print("Данные успешно сохранены.")
     except Exception as e:
-        messagebox.showerror(
-            "Ошибка", f"Ошибка при сохранении данных: {str(e)}")
+        print(f"Ошибка сохранения: {str(e)}")
+        messagebox.showerror("Ошибка", f"Ошибка при сохранении данных: {str(e)}")

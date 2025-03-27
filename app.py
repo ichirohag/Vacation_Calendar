@@ -36,6 +36,7 @@ class VacationCalendarApp:
         # Setup UI and load data
         setup_ui(self)
         load_data(self)  # May overwrite self.employees if successful
+        recalc_employee_vacations(self)
         update_employee_list(self)
         cache_vacations(self)
         update_calendar(self)
